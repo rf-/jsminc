@@ -275,7 +275,7 @@ static VALUE minify(VALUE self, VALUE _in_s) {
 }
 
 
-void Init_jsminc_ext() {
+void Init_jsminc() {
     VALUE c = rb_cObject;
     c = rb_const_get(c, rb_intern("JSMinC"));
 

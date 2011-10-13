@@ -1,6 +1,6 @@
 require 'mkmf'
 
-extension_name = 'jsminc_ext'
+extension_name = 'jsminc'
 
 dir_config extension_name
 
