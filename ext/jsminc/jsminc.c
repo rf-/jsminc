@@ -255,7 +255,7 @@ jsmin()
 
 
 static VALUE minify(VALUE self, VALUE _in_s) {
-    char *in_s = StringValuePtr(_in_s);
+    char *in_s = StringValueCStr(_in_s);
     long in_length = strlen(in_s);
     char out_s[in_length + 1];
 
