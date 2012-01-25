@@ -1,11 +1,12 @@
 #include "ruby.h"
 
-static char theA;
-static char theB;
-static char theLookahead = '\0';
-
-static char *current_in;
-static char *current_out;
+typedef struct jsmin_struct {
+	char theA;
+	char theB;
+	char theLookahead;
+	char *in;
+	char *out;
+} jsmin_struct;
 
 /* isAlphanum -- return true if the character is a letter, digit, underscore,
    dollar sign, or non-ASCII character.
@@ -26,13 +27,12 @@ isAlphanum(char c)
    */
 
 static char
-get()
+get(jsmin_struct *s)
 {
-    char c = theLookahead;
-    theLookahead = '\0';
+    char c = s->theLookahead;
+    s->theLookahead = '\0';
     if (c == '\0') {
-        c = *current_in;
-        current_in++;
+        c = *(s->in)++;
     }
     if (c >= ' ' || c == '\n' || c == '\0') {
         return c;
@@ -44,20 +44,20 @@ get()
 }
 
 static void
-write_char(const char c)
+write_char(jsmin_struct *s, const char c)
 {
-    *current_out = c;
-    current_out++;
+    *(s->out) = c;
+	*(s->out)++;
 }
 
 /* peek -- get the next character without getting it.
    */
 
 static char
-peek()
+peek(jsmin_struct *s)
 {
-    theLookahead = get();
-    return theLookahead;
+    s->theLookahead = get(s);
+    return s->theLookahead;
 }
 
 
@@ -66,25 +66,25 @@ peek()
    */
 
 static char
-next()
+next(jsmin_struct *s)
 {
-    char c = get();
+    char c = get(s);
     if  (c == '/') {
-        switch (peek()) {
+        switch (peek(s)) {
         case '/':
             for (;;) {
-                c = get();
+                c = get(s);
                 if (c <= '\n') {
                     return c;
                 }
             }
         case '*':
-            get();
+            get(s);
             for (;;) {
-                switch (get()) {
+                switch (get(s)) {
                 case '*':
-                    if (peek() == '/') {
-                        get();
+                    if (peek(s) == '/') {
+                        get(s);
                         return ' ';
                     }
                     break;
@@ -109,67 +109,67 @@ next()
    */
 
 static void
-action(int d)
+action(jsmin_struct *s, int d)
 {
     switch (d) {
     case 1:
-        write_char(theA);
+        write_char(s, s->theA);
     case 2:
-        theA = theB;
-        if (theA == '\'' || theA == '"' || theA == '`') {
+        s->theA = s->theB;
+        if (s->theA == '\'' || s->theA == '"' || s->theA == '`') {
             for (;;) {
-                write_char(theA);
-                theA = get();
-                if (theA == theB) {
+                write_char(s, s->theA);
+                s->theA = get(s);
+                if (s->theA == s->theB) {
                     break;
                 }
-                if (theA == '\\') {
-                    write_char(theA);
-                    theA = get();
+                if (s->theA == '\\') {
+                    write_char(s, s->theA);
+                    s->theA = get(s);
                 }
-                if (theA == '\0') {
+                if (s->theA == '\0') {
                     rb_raise(rb_eStandardError, "unterminated string literal");
                 }
             }
         }
     case 3:
-        theB = next();
-        if (theB == '/' && (theA == '(' || theA == ',' || theA == '=' ||
-                    theA == ':' || theA == '[' || theA == '!' ||
-                    theA == '&' || theA == '|' || theA == '?' ||
-                    theA == '{' || theA == '}' || theA == ';' ||
-                    theA == '\n')) {
-            write_char(theA);
-            write_char(theB);
+        s->theB = next(s);
+        if (s->theB == '/' && (s->theA == '(' || s->theA == ',' || s->theA == '=' ||
+                    s->theA == ':' || s->theA == '[' || s->theA == '!' ||
+                    s->theA == '&' || s->theA == '|' || s->theA == '?' ||
+                    s->theA == '{' || s->theA == '}' || s->theA == ';' ||
+                    s->theA == '\n')) {
+            write_char(s, s->theA);
+            write_char(s, s->theB);
             for (;;) {
-                theA = get();
-                if (theA == '[') {
+                s->theA = get(s);
+                if (s->theA == '[') {
                     for (;;) {
-                        write_char(theA);
-                        theA = get();
-                        if (theA == ']') {
+                        write_char(s, s->theA);
+                        s->theA = get(s);
+                        if (s->theA == ']') {
                             break;
                         }
-                        if (theA == '\\') {
-                            write_char(theA);
-                            theA = get();
+                        if (s->theA == '\\') {
+                            write_char(s, s->theA);
+                            s->theA = get(s);
                         }
-                        if (theA == '\0') {
+                        if (s->theA == '\0') {
                             rb_raise(rb_eStandardError, "unterminated set in regex literal");
                         }
                     }
-                } else if (theA == '/') {
+                } else if (s->theA == '/') {
                     break;
-                } else if (theA =='\\') {
-                    write_char(theA);
-                    theA = get();
+                } else if (s->theA =='\\') {
+                    write_char(s, s->theA);
+                    s->theA = get(s);
                 }
-                if (theA == '\0') {
+                if (s->theA == '\0') {
                     rb_raise(rb_eStandardError, "unterminated regex literal");
                 }
-                write_char(theA);
+                write_char(s, s->theA);
             }
-            theB = next();
+            s->theB = next(s);
         }
     }
 }
@@ -182,50 +182,52 @@ action(int d)
    */
 
 static void
-jsmin()
+jsmin(jsmin_struct *s)
 {
-    theA = '\n';
-    action(3);
-    while (theA != '\0') {
-        switch (theA) {
+    s->theA = '\n';
+	s->theLookahead = '\0';
+
+    action(s, 3);
+    while (s->theA != '\0') {
+        switch (s->theA) {
         case ' ':
-            if (isAlphanum(theB)) {
-                action(1);
+            if (isAlphanum(s->theB)) {
+                action(s, 1);
             } else {
-                action(2);
+                action(s, 2);
             }
             break;
         case '\n':
-            switch (theB) {
+            switch (s->theB) {
             case '{':
             case '[':
             case '(':
             case '+':
             case '-':
-                action(1);
+                action(s, 1);
                 break;
             case ' ':
-                action(3);
+                action(s, 3);
                 break;
             default:
-                if (isAlphanum(theB)) {
-                    action(1);
+                if (isAlphanum(s->theB)) {
+                    action(s, 1);
                 } else {
-                    action(2);
+                    action(s, 2);
                 }
             }
             break;
         default:
-            switch (theB) {
+            switch (s->theB) {
             case ' ':
-                if (isAlphanum(theA)) {
-                    action(1);
+                if (isAlphanum(s->theA)) {
+                    action(s, 1);
                     break;
                 }
-                action(3);
+                action(s, 3);
                 break;
             case '\n':
-                switch (theA) {
+                switch (s->theA) {
                 case '}':
                 case ']':
                 case ')':
@@ -234,27 +236,29 @@ jsmin()
                 case '"':
                 case '\'':
                 case '`':
-                    action(1);
+                    action(s, 1);
                     break;
                 default:
-                    if (isAlphanum(theA)) {
-                        action(1);
+                    if (isAlphanum(s->theA)) {
+                        action(s, 1);
                     } else {
-                        action(3);
+                        action(s, 3);
                     }
                 }
                 break;
             default:
-                action(1);
+                action(s, 1);
                 break;
             }
         }
     }
-    write_char('\0');
+    write_char(s, '\0');
 }
 
 
 static VALUE minify(VALUE self, VALUE _in_s) {
+    jsmin_struct s;
+
     char *in_s = StringValueCStr(_in_s);
     long in_length = strlen(in_s);
     char out_s[in_length + 1];
@@ -263,9 +267,9 @@ static VALUE minify(VALUE self, VALUE _in_s) {
     VALUE prev_encoding = rb_funcall(_in_s, rb_intern("encoding"), 0);
 #endif
 
-    current_in = in_s;
-    current_out = out_s;
-    jsmin();
+    s.in = in_s;
+    s.out = out_s;
+    jsmin(&s);
 
 #ifdef RUBY_19
     return rb_funcall(rb_str_new2(out_s + 1), rb_intern("force_encoding"), 1, prev_encoding);
