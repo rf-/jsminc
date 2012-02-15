@@ -1,2 +1,2 @@
 require "jsminc/version"
-require "jsminc.#{Config::CONFIG['DLEXT']}"
+require "jsminc.#{RbConfig::CONFIG['DLEXT']}"
