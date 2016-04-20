@@ -3,6 +3,8 @@
 typedef struct jsmin_struct {
 	char theA;
 	char theB;
+	char theX;
+	char theY;
 	char theLookahead;
 	char *in;
 	char *out;
@@ -75,27 +77,29 @@ next(jsmin_struct *s)
             for (;;) {
                 c = get(s);
                 if (c <= '\n') {
-                    return c;
+                    break;
                 }
             }
+            break;
         case '*':
             get(s);
-            for (;;) {
+            while (c != ' ') {
                 switch (get(s)) {
                 case '*':
                     if (peek(s) == '/') {
                         get(s);
-                        return ' ';
+                        c = ' ';
                     }
                     break;
                 case '\0':
                     rb_raise(rb_eStandardError, "unterminated comment");
                 }
             }
-        default:
-            return c;
+            break;
         }
     }
+    s->theY = s->theX;
+    s->theX = c;
     return c;
 }
 
@@ -114,6 +118,11 @@ action(jsmin_struct *s, int d)
     switch (d) {
     case 1:
         write_char(s, s->theA);
+        if ((s->theY == '\n' || s->theY == ' ') &&
+                (s->theA == '+' || s->theA == '-' || s->theA == '*' || s->theA == '/') &&
+                (s->theB == '+' || s->theB == '-' || s->theB == '*' || s->theB == '/')) {
+            write_char(s, s->theY);
+        }
     case 2:
         s->theA = s->theB;
         if (s->theA == '\'' || s->theA == '"' || s->theA == '`') {
@@ -134,12 +143,15 @@ action(jsmin_struct *s, int d)
         }
     case 3:
         s->theB = next(s);
-        if (s->theB == '/' && (s->theA == '(' || s->theA == ',' || s->theA == '=' ||
-                    s->theA == ':' || s->theA == '[' || s->theA == '!' ||
-                    s->theA == '&' || s->theA == '|' || s->theA == '?' ||
-                    s->theA == '{' || s->theA == '}' || s->theA == ';' ||
-                    s->theA == '\n')) {
+        if (s->theB == '/' && (
+                    s->theA == '(' || s->theA == ',' || s->theA == '=' || s->theA == ':' ||
+                    s->theA == '[' || s->theA == '!' || s->theA == '&' || s->theA == '|' ||
+                    s->theA == '?' || s->theA == '+' || s->theA == '-' || s->theA == '~' ||
+                    s->theA == '*' || s->theA == '/' || s->theA == '{' || s->theA == '\n')) {
             write_char(s, s->theA);
+            if (s->theA == '/' || s->theA == '*') {
+                write_char(s, ' ');
+            }
             write_char(s, s->theB);
             for (;;) {
                 s->theA = get(s);
@@ -159,6 +171,11 @@ action(jsmin_struct *s, int d)
                         }
                     }
                 } else if (s->theA == '/') {
+                    switch (peek(s)) {
+                    case '/':
+                    case '*':
+                        rb_raise(rb_eStandardError, "unterminated set in regex literal");
+                    }
                     break;
                 } else if (s->theA =='\\') {
                     write_char(s, s->theA);
@@ -184,18 +201,18 @@ action(jsmin_struct *s, int d)
 static void
 jsmin(jsmin_struct *s)
 {
+    if (peek(s) == 0xEF) {
+        get(s);
+        get(s);
+        get(s);
+    }
     s->theA = '\n';
-	s->theLookahead = '\0';
 
     action(s, 3);
     while (s->theA != '\0') {
         switch (s->theA) {
         case ' ':
-            if (isAlphanum(s->theB)) {
-                action(s, 1);
-            } else {
-                action(s, 2);
-            }
+            action(s, isAlphanum(s->theB) ? 1 : 2);
             break;
         case '\n':
             switch (s->theB) {
@@ -204,27 +221,21 @@ jsmin(jsmin_struct *s)
             case '(':
             case '+':
             case '-':
+            case '!':
+            case '~':
                 action(s, 1);
                 break;
             case ' ':
                 action(s, 3);
                 break;
             default:
-                if (isAlphanum(s->theB)) {
-                    action(s, 1);
-                } else {
-                    action(s, 2);
-                }
+                action(s, isAlphanum(s->theB) ? 1 : 2);
             }
             break;
         default:
             switch (s->theB) {
             case ' ':
-                if (isAlphanum(s->theA)) {
-                    action(s, 1);
-                    break;
-                }
-                action(s, 3);
+                action(s, isAlphanum(s->theA) ? 1 : 3);
                 break;
             case '\n':
                 switch (s->theA) {
@@ -239,11 +250,7 @@ jsmin(jsmin_struct *s)
                     action(s, 1);
                     break;
                 default:
-                    if (isAlphanum(s->theA)) {
-                        action(s, 1);
-                    } else {
-                        action(s, 3);
-                    }
+                    action(s, isAlphanum(s->theA) ? 1 : 3);
                 }
                 break;
             default:
@@ -267,6 +274,9 @@ static VALUE minify(VALUE self, VALUE _in_s) {
     VALUE prev_encoding = rb_funcall(_in_s, rb_intern("encoding"), 0);
 #endif
 
+    s.theLookahead = '\0';
+    s.theX = '\0';
+    s.theY = '\0';
     s.in = in_s;
     s.out = out_s;
     jsmin(&s);
