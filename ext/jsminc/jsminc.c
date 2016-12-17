@@ -49,7 +49,7 @@ static void
 write_char(jsmin_struct *s, const char c)
 {
     *(s->out) = c;
-	*(s->out)++;
+    *(s->out)++;
 }
 
 /* peek -- get the next character without getting it.
@@ -270,9 +270,7 @@ static VALUE minify(VALUE self, VALUE _in_s) {
     long in_length = strlen(in_s);
     char out_s[in_length + 1];
 
-#ifdef RUBY_19
     VALUE prev_encoding = rb_funcall(_in_s, rb_intern("encoding"), 0);
-#endif
 
     s.theLookahead = '\0';
     s.theX = '\0';
@@ -281,11 +279,7 @@ static VALUE minify(VALUE self, VALUE _in_s) {
     s.out = out_s;
     jsmin(&s);
 
-#ifdef RUBY_19
     return rb_funcall(rb_str_new2(out_s + 1), rb_intern("force_encoding"), 1, prev_encoding);
-#else
-    return rb_str_new2(out_s + 1);
-#endif
 }
 
 
